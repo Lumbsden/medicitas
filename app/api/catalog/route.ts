@@ -12,10 +12,25 @@ async function loadCatalog() {
       { clinicId: clinic.id, fullName: "Dr. Daniel Pérez", specialty: "Pediatría" },
       { clinicId: clinic.id, fullName: "Dra. Elena Castillo", specialty: "Ginecología" },
     ]).returning();
-    const dates = ["2026-08-19T09:00:00", "2026-08-19T11:15:00", "2026-08-19T15:30:00"];
+    // La clínica demo siempre empieza con cupos futuros. Guardamos los
+    // instantes en UTC y la interfaz los presenta en la hora local del paciente.
+    const timeSlots = [
+      { dayOffset: 1, hour: 9, minute: 0 },
+      { dayOffset: 2, hour: 11, minute: 15 },
+      { dayOffset: 3, hour: 15, minute: 30 },
+    ];
+    const dates = timeSlots.map(({ dayOffset, hour, minute }) => {
+      const date = new Date();
+      date.setUTCDate(date.getUTCDate() + dayOffset);
+      // Panamá usa UTC-5. El MVP piloto trabaja con ese huso horario.
+      date.setUTCHours(hour + 5, minute, 0, 0);
+      return date.toISOString();
+    });
     await db.insert(availability).values(createdDoctors.flatMap(doctor =>
-      dates.map((startsAt, index) => ({
-        doctorId: doctor.id, startsAt, endsAt: ["2026-08-19T09:30:00", "2026-08-19T11:45:00", "2026-08-19T16:00:00"][index],
+      dates.map(startsAt => ({
+        doctorId: doctor.id,
+        startsAt,
+        endsAt: new Date(new Date(startsAt).getTime() + 30 * 60 * 1000).toISOString(),
       }))
     ));
     clinicRows = [clinic];
