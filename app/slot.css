@@ -1,0 +1,4 @@
+.slots button.chosen{background:#2d76d2;color:#fff;border-color:#2d76d2;box-shadow:0 4px 12px #2d76d255}
+.slots button.chosen b{color:#fff}
+.selected-time{margin:0 0 16px;color:#245e9d;font-size:13px}
+.form-error{color:#b42318;font-size:13px;font-weight:700}
