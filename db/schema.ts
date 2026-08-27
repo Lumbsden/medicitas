@@ -34,9 +34,16 @@ export const patients = sqliteTable("patients", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   fullName: text("full_name").notNull(),
   whatsapp: text("whatsapp").notNull(),
+  // Solo se usa internamente para identificar a la persona sin depender del
+  // formato visual que escribió (por ejemplo, 6000-0000 o +507 6000-0000).
+  whatsappNormalized: text("whatsapp_normalized"),
   email: text("email"),
+  status: text("status").notNull().default("active"),
   createdAt,
-});
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
+}, table => [
+  uniqueIndex("patients_whatsapp_normalized_unique").on(table.whatsappNormalized),
+]);
 
 export const appointments = sqliteTable("appointments", {
   id: integer("id").primaryKey({ autoIncrement: true }),
@@ -44,8 +51,38 @@ export const appointments = sqliteTable("appointments", {
   patientId: integer("patient_id").notNull().references(() => patients.id),
   status: text("status").notNull().default("pending"),
   reservationCode: text("reservation_code").notNull(),
+  cancelledAt: text("cancelled_at"),
+  rescheduleRequestedAt: text("reschedule_requested_at"),
+  updatedAt: text("updated_at").notNull().default(sql`CURRENT_TIMESTAMP`),
   createdAt,
 }, table => [
-  uniqueIndex("appointments_availability_unique").on(table.availabilityId),
+  // Conserva el historial de una cita cancelada, pero solo permite una cita
+  // activa por cupo. Así, cancelar sí libera el horario para otra reserva.
+  uniqueIndex("appointments_active_availability_unique")
+    .on(table.availabilityId)
+    .where(sql`${table.status} IN ('pending', 'confirmed', 'reschedule_requested')`),
   uniqueIndex("appointments_reservation_code_unique").on(table.reservationCode),
+]);
+
+/** Códigos de un solo uso enviados al WhatsApp del paciente. */
+export const patientLoginChallenges = sqliteTable("patient_login_challenges", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  patientId: integer("patient_id").notNull().references(() => patients.id),
+  codeHash: text("code_hash").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  attempts: integer("attempts").notNull().default(0),
+  consumedAt: text("consumed_at"),
+  createdAt,
+});
+
+/** Sesiones opacas. Nunca se guarda el token real, solo su hash. */
+export const patientSessions = sqliteTable("patient_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  patientId: integer("patient_id").notNull().references(() => patients.id),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  revokedAt: text("revoked_at"),
+  createdAt,
+}, table => [
+  uniqueIndex("patient_sessions_token_hash_unique").on(table.tokenHash),
 ]);
