@@ -1,4 +1,12 @@
-import { eq } from "drizzle-orm";
+import { eq, sql } from "drizzle-orm";
+
+function normalizeWhatsApp(value: string) {
+  const digits = value.replace(/\D/g, "");
+  // Panamá es el mercado piloto. Guardamos siempre el prefijo de país para
+  // poder migrar luego a WhatsApp Business sin datos ambiguos.
+  if (digits.length === 8) return `507${digits}`;
+  return digits;
+}
 
 export async function GET() {
   try {
@@ -30,7 +38,11 @@ export async function PATCH(request: Request) {
     const db = getDb();
     const [appointment] = await db.select().from(appointments).where(eq(appointments.id, body.id!)).limit(1);
     if (!appointment) return Response.json({ error: "Cita no encontrada." }, { status: 404 });
-    await db.update(appointments).set({ status: body.status! }).where(eq(appointments.id, appointment.id));
+    await db.update(appointments).set({
+      status: body.status!,
+      updatedAt: sql`CURRENT_TIMESTAMP`,
+      ...(body.status === "cancelled" ? { cancelledAt: sql`CURRENT_TIMESTAMP` } : { rescheduleRequestedAt: sql`CURRENT_TIMESTAMP` }),
+    }).where(eq(appointments.id, appointment.id));
     if (body.status === "cancelled") {
       await db.update(availability).set({ status: "available" }).where(eq(availability.id, appointment.availabilityId));
     }
@@ -46,8 +58,9 @@ export async function POST(request: Request) {
     const body = await request.json() as { fullName?: string; whatsapp?: string; availabilityId?: number };
     const fullName = body.fullName?.trim() ?? "";
     const whatsapp = body.whatsapp?.trim() ?? "";
+    const whatsappNormalized = normalizeWhatsApp(whatsapp);
     const availabilityId = Number(body.availabilityId);
-    if (!fullName || !whatsapp || !Number.isInteger(availabilityId)) {
+    if (!fullName || whatsappNormalized.length < 10 || !Number.isInteger(availabilityId)) {
       return Response.json({ error: "Nombre, WhatsApp y horario son obligatorios." }, { status: 400 });
     }
     const { getDb } = await import("../../../db");
@@ -57,7 +70,12 @@ export async function POST(request: Request) {
     if (!slot || slot.status !== "available") {
       return Response.json({ error: "Este horario ya no está disponible." }, { status: 409 });
     }
-    const [patient] = await db.insert(patients).values({ fullName, whatsapp }).returning();
+    const [patient] = await db.insert(patients).values({ fullName, whatsapp, whatsappNormalized })
+      .onConflictDoUpdate({
+        target: patients.whatsappNormalized,
+        set: { fullName, whatsapp, updatedAt: sql`CURRENT_TIMESTAMP` },
+      })
+      .returning();
     const code = "MC-" + crypto.randomUUID().slice(0, 8).toUpperCase();
     try {
       const [appointment] = await db.insert(appointments).values({ availabilityId, patientId: patient.id, reservationCode: code, status: "pending" }).returning();
