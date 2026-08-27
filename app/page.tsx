@@ -2,11 +2,25 @@
 import { useEffect, useState } from "react";
 import "./slot.css";
 
-const doctors = [
+const clinicDoctors = [
   ["Dra. Valeria Gómez", "Medicina general", "Clínica Demo", "Hoy, 3:30 p.m.", "VG"],
   ["Dr. Daniel Pérez", "Pediatría", "Clínica Demo", "Mañana, 9:00 a.m.", "DP"],
   ["Dra. Elena Castillo", "Ginecología", "Clínica Demo", "Mañana, 2:15 p.m.", "EC"],
 ];
+
+type CatalogDoctor = { id: number; clinicId: number; fullName: string; specialty: string; status: string };
+type CatalogSlot = { id: number; doctorId: number; startsAt: string; endsAt: string; status: string };
+type Catalog = {
+  clinic: { id: number; name: string; address: string; whatsapp: string };
+  doctors: CatalogDoctor[];
+  availability: CatalogSlot[];
+};
+
+function formatSlot(startsAt: string) {
+  return new Intl.DateTimeFormat("es-PA", {
+    weekday: "short", day: "numeric", month: "short", hour: "numeric", minute: "2-digit",
+  }).format(new Date(startsAt));
+}
 
 function Clinic({ back }: { back: () => void }) {
   const [tab,setTab]=useState("Agenda");
@@ -14,7 +28,7 @@ function Clinic({ back }: { back: () => void }) {
   const loadAppointments=()=>fetch("/api/appointments").then(r=>r.json()).then(data=>setRealAppointments(data.appointments??[])).catch(()=>undefined);
   useEffect(()=>{loadAppointments()},[]);
   const updateAppointment=async(id:number,status:"cancelled"|"reschedule_requested")=>{await fetch("/api/appointments",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status})});loadAppointments()};
-  const content=tab==="Médicos"?<><h2>Médicos activos</h2><div className="cards">{doctors.map(d=><article key={d[0]}><em>{d[4]}</em><div><small>{d[1]}</small><h3>{d[0]}</h3><p>{d[2]}<br/><strong>● Activo</strong></p></div><button>Editar</button></article>)}</div></>:tab==="Horarios"?<><h2>Horarios de atención</h2><div className="cards"><article><em>LU</em><div><small>DRA. VALERIA GÓMEZ</small><h3>Lunes a viernes</h3><p>8:00 a.m. a 4:00 p.m. · Citas de 30 minutos</p></div><button>Editar</button></article><article><em>MA</em><div><small>DR. DANIEL PÉREZ</small><h3>Lunes, miércoles y viernes</h3><p>9:00 a.m. a 2:00 p.m. · Citas de 30 minutos</p></div><button>Editar</button></article></div></>:tab==="Configuración"?<><h2>Configuración de clínica</h2><div className="settings"><label>Nombre de la clínica<input value="Clínica Demo" readOnly/></label><label>Teléfono WhatsApp<input value="+507 6000-0000" readOnly/></label><label>Dirección<input value="Dirección de demostración" readOnly/></label><button className="primary">Guardar cambios</button></div></>:<><h2>Agenda de hoy</h2>{[["09","9:00 A.M.","María González","Dr. Daniel Pérez · Pediatría","Confirmada"],["11","11:15 A.M.","Carmen Díaz","Dra. Valeria Gómez · Medicina general","Ver cita"],["03","3:30 P.M.","Laura Herrera","Dra. Elena Castillo · Ginecología","Confirmar"]].map(c=><article key={c[2]}><em>{c[0]}</em><div><small>{c[1]}</small><h3>{c[2]}</h3><p>{c[3]}</p></div><button>{c[4]}</button></article>)}</>;
+  const content=tab==="Médicos"?<><h2>Médicos activos</h2><div className="cards">{clinicDoctors.map(d=><article key={d[0]}><em>{d[4]}</em><div><small>{d[1]}</small><h3>{d[0]}</h3><p>{d[2]}<br/><strong>● Activo</strong></p></div><button>Editar</button></article>)}</div></>:tab==="Horarios"?<><h2>Horarios de atención</h2><div className="cards"><article><em>LU</em><div><small>DRA. VALERIA GÓMEZ</small><h3>Lunes a viernes</h3><p>8:00 a.m. a 4:00 p.m. · Citas de 30 minutos</p></div><button>Editar</button></article><article><em>MA</em><div><small>DR. DANIEL PÉREZ</small><h3>Lunes, miércoles y viernes</h3><p>9:00 a.m. a 2:00 p.m. · Citas de 30 minutos</p></div><button>Editar</button></article></div></>:tab==="Configuración"?<><h2>Configuración de clínica</h2><div className="settings"><label>Nombre de la clínica<input value="Clínica Demo" readOnly/></label><label>Teléfono WhatsApp<input value="+507 6000-0000" readOnly/></label><label>Dirección<input value="Dirección de demostración" readOnly/></label><button className="primary">Guardar cambios</button></div></>:<><h2>Agenda de hoy</h2>{[["09","9:00 A.M.","María González","Dr. Daniel Pérez · Pediatría","Confirmada"],["11","11:15 A.M.","Carmen Díaz","Dra. Valeria Gómez · Medicina general","Ver cita"],["03","3:30 P.M.","Laura Herrera","Dra. Elena Castillo · Ginecología","Confirmar"]].map(c=><article key={c[2]}><em>{c[0]}</em><div><small>{c[1]}</small><h3>{c[2]}</h3><p>{c[3]}</p></div><button>{c[4]}</button></article>)}</>;
   return <main>
     <nav><b><i>+</i>MediCitas</b><button onClick={back}>Ver sitio público</button></nav>
     <section className="clinic">
@@ -60,9 +74,21 @@ export default function Home() {
   const [reservationCode, setReservationCode] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
-  const [selectedSlot, setSelectedSlot] = useState(0);
-  useEffect(() => { fetch("/api/catalog").catch(() => undefined); }, []);
-  const list = doctors.filter(d => d.join(" ").toLowerCase().includes(query.toLowerCase()));
+  const [selectedSlot, setSelectedSlot] = useState<number | null>(null);
+  const [catalog, setCatalog] = useState<Catalog | null>(null);
+  const [catalogError, setCatalogError] = useState("");
+  useEffect(() => {
+    fetch("/api/catalog").then(async response => {
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "No fue posible cargar los horarios.");
+      setCatalog(data);
+    }).catch(error => setCatalogError(error instanceof Error ? error.message : "No fue posible cargar los horarios."));
+  }, []);
+  const list = (catalog?.doctors ?? []).filter(doctor =>
+    `${doctor.fullName} ${doctor.specialty} ${catalog?.clinic.name ?? ""}`.toLowerCase().includes(query.toLowerCase())
+  );
+  const selectedDoctor = catalog?.doctors.find(doctor => doctor.id === picked);
+  const doctorSlots = (catalog?.availability ?? []).filter(slot => slot.doctorId === picked && slot.status === "available");
   if (clinic) return <Clinic back={() => setClinic(false)} />;
   if (demo) return <ClinicDemo back={() => setDemo(false)} openBooking={() => { setDemo(false); setTimeout(() => document.getElementById("results")?.scrollIntoView({behavior:"smooth"}), 0); }} />;
   return <main>
@@ -73,10 +99,10 @@ export default function Home() {
       <div className="search"><input value={query} onChange={e => setQuery(e.target.value)} placeholder="Especialidad, médico o clínica" /><button>Buscar citas</button></div>
       <aside><button onClick={() => setQuery("Medicina")}>Medicina general</button><button onClick={() => setQuery("Pediatría")}>Pediatría</button><button onClick={() => setQuery("Ginecología")}>Ginecología</button></aside>
     </section>
-    <section id="results"><small>DISPONIBILIDAD DEMOSTRATIVA</small><h2>Encuentra tu próxima cita</h2><p>Estos horarios son ejemplos para visualizar el MVP.</p>
-      <div className="cards">{list.map((d,i) => <article key={d[0]}><em>{d[4]}</em><div><small>{d[1]}</small><h3>{d[0]}</h3><p>{d[2]}<br /><strong>● {d[3]}</strong></p></div><button onClick={() => {setPicked(i);setDone(false);setError("");setFullName("");setWhatsapp("");setSelectedSlot(0)}}>Ver horarios</button></article>)}</div>
+    <section id="results"><small>DISPONIBILIDAD EN TIEMPO REAL</small><h2>Encuentra tu próxima cita</h2><p>{catalogError || (catalog ? "Horarios consultados directamente desde la agenda de la clínica." : "Cargando médicos y horarios disponibles...")}</p>
+      <div className="cards">{list.map(doctor => { const firstSlot = (catalog?.availability ?? []).find(slot => slot.doctorId === doctor.id && slot.status === "available"); return <article key={doctor.id}><em>{doctor.fullName.split(" ").slice(-2).map(part => part[0]).join("")}</em><div><small>{doctor.specialty}</small><h3>{doctor.fullName}</h3><p>{catalog?.clinic.name}<br /><strong>● {firstSlot ? formatSlot(firstSlot.startsAt) : "Sin cupos disponibles"}</strong></p></div><button disabled={!firstSlot} onClick={() => {setPicked(doctor.id);setDone(false);setError("");setFullName("");setWhatsapp("");setSelectedSlot(firstSlot?.id ?? null)}}>Ver horarios</button></article>})}</div>
     </section>
-    {picked !== null && <div className="overlay"><div className="modal">{!done ? <><button className="x" onClick={() => setPicked(null)}>×</button><small>RESERVAR CITA</small><h2>{list[picked][0]}</h2><p>{list[picked][1]} · {list[picked][2]}</p><div className="slots">{["Hoy|3:30 p.m.","Mañana|9:00 a.m.","Viernes|11:15 a.m."].map((slot,index)=>{const [day,time]=slot.split("|");return <button className={selectedSlot===index?"chosen":""} onClick={()=>setSelectedSlot(index)} key={slot}>{day}<br/><b>{time}</b></button>})}</div><p className="selected-time">Horario elegido: <b>{["Hoy, 3:30 p.m.","Mañana, 9:00 a.m.","Viernes, 11:15 a.m."][selectedSlot]}</b></p><label>Nombre completo<input value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Escribe tu nombre"/></label><label>WhatsApp<input value={whatsapp} onChange={e=>setWhatsapp(e.target.value)} placeholder="Ej. 6000-0000"/></label>{error&&<p className="form-error">{error}</p>}<button className="primary" disabled={saving} onClick={async()=>{setError("");if(!fullName.trim()||!whatsapp.trim()){setError("Completa tu nombre y WhatsApp.");return}setSaving(true);try{const r=await fetch("/api/appointments",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fullName,whatsapp,availabilityId:picked*3+selectedSlot+1})});const data=await r.json();if(!r.ok)throw new Error(data.error);setReservationCode(data.reservationCode);setDone(true)}catch(e){setError(e instanceof Error?e.message:"No fue posible guardar la cita.")}finally{setSaving(false)}}}>{saving?"Guardando...":"Confirmar reserva"}</button></> : <><div className="check">✓</div><small>CITA RESERVADA</small><h2>¡Listo!</h2><p>Tu solicitud fue registrada con el código <b>{reservationCode}</b>. Recibirás los detalles por WhatsApp.</p><button className="primary" onClick={() => setPicked(null)}>Volver a MediCitas</button></>}</div></div>}
+    {picked !== null && selectedDoctor && <div className="overlay"><div className="modal">{!done ? <><button className="x" onClick={() => setPicked(null)}>×</button><small>RESERVAR CITA</small><h2>{selectedDoctor.fullName}</h2><p>{selectedDoctor.specialty} · {catalog?.clinic.name}</p><div className="slots">{doctorSlots.map(slot=><button className={selectedSlot===slot.id?"chosen":""} onClick={()=>setSelectedSlot(slot.id)} key={slot.id}>{new Intl.DateTimeFormat("es-PA",{weekday:"short",day:"numeric",month:"short"}).format(new Date(slot.startsAt))}<br/><b>{new Intl.DateTimeFormat("es-PA",{hour:"numeric",minute:"2-digit"}).format(new Date(slot.startsAt))}</b></button>)}</div><p className="selected-time">Horario elegido: <b>{selectedSlot ? formatSlot(doctorSlots.find(slot => slot.id === selectedSlot)?.startsAt ?? "") : "Selecciona un horario"}</b></p><label>Nombre completo<input value={fullName} onChange={e=>setFullName(e.target.value)} placeholder="Escribe tu nombre"/></label><label>WhatsApp<input value={whatsapp} onChange={e=>setWhatsapp(e.target.value)} placeholder="Ej. 6000-0000"/></label>{error&&<p className="form-error">{error}</p>}<button className="primary" disabled={saving || !selectedSlot} onClick={async()=>{setError("");if(!fullName.trim()||!whatsapp.trim()||!selectedSlot){setError("Completa tus datos y selecciona un horario.");return}setSaving(true);try{const r=await fetch("/api/appointments",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({fullName,whatsapp,availabilityId:selectedSlot})});const data=await r.json();if(!r.ok)throw new Error(data.error);setReservationCode(data.reservationCode);setDone(true)}catch(e){setError(e instanceof Error?e.message:"No fue posible guardar la cita.")}finally{setSaving(false)}}}>{saving?"Guardando...":"Confirmar reserva"}</button></> : <><div className="check">✓</div><small>CITA RESERVADA</small><h2>¡Listo!</h2><p>Tu solicitud fue registrada con el código <b>{reservationCode}</b>. Recibirás los detalles por WhatsApp.</p><button className="primary" onClick={() => setPicked(null)}>Volver a MediCitas</button></>}</div></div>}
     <footer><b><i>+</i>MediCitas</b><p>Una forma más simple de coordinar tu salud.</p></footer>
   </main>;
 }
