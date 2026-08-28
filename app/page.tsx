@@ -49,6 +49,52 @@ function Clinic({ back }: { back: () => void }) {
   </main>;
 }
 
+type PatientAppointment = { id: number; status: string; reservationCode: string; startsAt: string; doctorName: string; specialty: string };
+
+function PatientPortal({ back }: { back: () => void }) {
+  const [fullName, setFullName] = useState("");
+  const [whatsapp, setWhatsapp] = useState("");
+  const [reservationCode, setReservationCode] = useState("");
+  const [appointments, setAppointments] = useState<PatientAppointment[]>([]);
+  const [error, setError] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+
+  const loadAppointments = async () => {
+    const session = await fetch("/api/patient/session").then(response => response.json());
+    if (!session.authenticated) { setLoading(false); return; }
+    setFullName(session.patient.fullName);
+    const data = await fetch("/api/patient/appointments").then(response => response.json());
+    setAppointments(data.appointments ?? []);
+    setLoading(false);
+  };
+  useEffect(() => { loadAppointments().catch(() => { setError("No fue posible cargar tus citas."); setLoading(false); }); }, []);
+
+  const login = async () => {
+    setError(""); setSaving(true);
+    try {
+      const response = await fetch("/api/patient/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ whatsapp, reservationCode }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error);
+      setFullName(data.patient.fullName);
+      const appointmentsResponse = await fetch("/api/patient/appointments");
+      const appointmentsData = await appointmentsResponse.json();
+      setAppointments(appointmentsData.appointments ?? []);
+    } catch (exception) { setError(exception instanceof Error ? exception.message : "No fue posible acceder."); }
+    finally { setSaving(false); setLoading(false); }
+  };
+  const updateAppointment = async (id: number, status: "cancelled" | "reschedule_requested") => {
+    await fetch("/api/patient/appointments", { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ id, status }) });
+    await loadAppointments();
+  };
+  const logout = async () => { await fetch("/api/patient/session", { method: "DELETE" }); setFullName(""); setAppointments([]); setWhatsapp(""); setReservationCode(""); };
+
+  return <main><nav><b><i>+</i>MediCitas</b><button onClick={back}>Ver sitio público</button></nav><section className="clinic">
+    <small>PANEL DEL PACIENTE</small><h1>{fullName ? `Hola, ${fullName}` : "Consulta tus citas"}</h1><p>{fullName ? "Aquí puedes revisar y gestionar tus reservas." : "Ingresa con el WhatsApp y el código de una de tus reservas."}</p>
+    {loading ? <p>Cargando...</p> : !fullName ? <div className="settings"><label>WhatsApp<input value={whatsapp} onChange={event => setWhatsapp(event.target.value)} placeholder="Ej. 6000-0000" /></label><label>Código de reserva<input value={reservationCode} onChange={event => setReservationCode(event.target.value.toUpperCase())} placeholder="Ej. MC-30D25FF6" /></label>{error && <p className="form-error">{error}</p>}<button className="primary" disabled={saving} onClick={login}>{saving ? "Verificando..." : "Entrar a mis citas"}</button><p><small>Por ahora el código de reserva valida el acceso. Luego llegará un código temporal por WhatsApp.</small></p></div> : <><button onClick={logout}>Cerrar sesión</button><h2>Mis citas</h2>{appointments.length === 0 ? <p>No tienes citas registradas.</p> : appointments.map(appointment => <article key={appointment.id}><em>{new Date(appointment.startsAt).getHours().toString().padStart(2, "0")}</em><div><small>{formatSlot(appointment.startsAt)} · {appointment.reservationCode}</small><h3>{appointment.doctorName}</h3><p>{appointment.specialty}<br/><strong>● {appointment.status}</strong></p></div>{appointment.status !== "cancelled" && <><button onClick={() => updateAppointment(appointment.id, "reschedule_requested")}>Reprogramar</button><button onClick={() => updateAppointment(appointment.id, "cancelled")}>Cancelar</button></>}</article>)}</>}
+  </section></main>;
+}
+
 function ClinicDemo({ back, openBooking }: { back: () => void; openBooking: () => void }) {
   return <main className="demo-page">
     <nav><b><i>+</i>MediCitas</b><button onClick={back}>← Volver al sitio</button></nav>
@@ -70,6 +116,7 @@ export default function Home() {
   const [picked, setPicked] = useState<number | null>(null);
   const [done, setDone] = useState(false);
   const [clinic, setClinic] = useState(false);
+  const [patient, setPatient] = useState(false);
   const [demo, setDemo] = useState(false);
   const [fullName, setFullName] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -92,9 +139,10 @@ export default function Home() {
   const selectedDoctor = catalog?.doctors.find(doctor => doctor.id === picked);
   const doctorSlots = (catalog?.availability ?? []).filter(slot => slot.doctorId === picked && slot.status === "available");
   if (clinic) return <Clinic back={() => setClinic(false)} />;
+  if (patient) return <PatientPortal back={() => setPatient(false)} />;
   if (demo) return <ClinicDemo back={() => setDemo(false)} openBooking={() => { setDemo(false); setTimeout(() => document.getElementById("results")?.scrollIntoView({behavior:"smooth"}), 0); }} />;
   return <main>
-    <nav><b><i>+</i>MediCitas</b><div className="nav-actions"><button className="demo-link" onClick={() => setDemo(true)}>Demo para clínicas</button><button onClick={() => setClinic(true)}>Soy clínica</button></div></nav>
+    <nav><b><i>+</i>MediCitas</b><div className="nav-actions"><button className="demo-link" onClick={() => setDemo(true)}>Demo para clínicas</button><button onClick={() => setPatient(true)}>Mis citas</button><button onClick={() => setClinic(true)}>Soy clínica</button></div></nav>
     <section className="hero">
       <small>CITAS MÉDICAS, SIN COMPLICACIONES</small><h1>Tu salud empieza<br />con una cita.</h1>
       <p>Encuentra médicos, consulta horarios reales y reserva desde tu celular.</p>
