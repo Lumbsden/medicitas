@@ -1,4 +1,5 @@
 async function loadCatalog() {
+  const { and, eq, gt } = await import("drizzle-orm");
   const { getDb } = await import("../../../db");
   const { clinics, doctors, availability } = await import("../../../db/schema");
   const db = getDb();
@@ -36,7 +37,12 @@ async function loadCatalog() {
     clinicRows = [clinic];
   }
   const doctorRows = await db.select().from(doctors);
-  const slotRows = await db.select().from(availability);
+  // El sitio público solo muestra cupos disponibles y futuros. El panel de
+  // clínica conserva el historial completo por separado.
+  const slotRows = await db.select().from(availability).where(and(
+    eq(availability.status, "available"),
+    gt(availability.startsAt, new Date().toISOString()),
+  ));
   return { clinic: clinicRows[0], doctors: doctorRows, availability: slotRows };
 }
 
