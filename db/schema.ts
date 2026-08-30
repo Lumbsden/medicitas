@@ -86,3 +86,31 @@ export const patientSessions = sqliteTable("patient_sessions", {
 }, table => [
   uniqueIndex("patient_sessions_token_hash_unique").on(table.tokenHash),
 ]);
+
+/** Personal autorizado para operar una clínica. */
+export const clinicUsers = sqliteTable("clinic_users", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  clinicId: integer("clinic_id").notNull().references(() => clinics.id),
+  fullName: text("full_name").notNull(),
+  email: text("email").notNull(),
+  passwordHash: text("password_hash").notNull(),
+  // admin administra configuración y equipo; receptionist gestiona agenda;
+  // doctor queda reservado para su agenda individual.
+  role: text("role").notNull().default("admin"),
+  status: text("status").notNull().default("active"),
+  createdAt,
+}, table => [
+  uniqueIndex("clinic_users_email_unique").on(table.email),
+]);
+
+/** Sesiones opacas del personal de clínica. */
+export const clinicSessions = sqliteTable("clinic_sessions", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  clinicUserId: integer("clinic_user_id").notNull().references(() => clinicUsers.id),
+  tokenHash: text("token_hash").notNull(),
+  expiresAt: text("expires_at").notNull(),
+  revokedAt: text("revoked_at"),
+  createdAt,
+}, table => [
+  uniqueIndex("clinic_sessions_token_hash_unique").on(table.tokenHash),
+]);

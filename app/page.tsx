@@ -42,17 +42,55 @@ function statusClass(status: string) {
   return `status-${status.replaceAll("_", "-")}`;
 }
 
+type ClinicUser = { clinicId: number; fullName: string; email: string; role: string };
+
+function ClinicAccess({ back, onAuthenticated }: { back: () => void; onAuthenticated: (user: ClinicUser) => void }) {
+  const [mode, setMode] = useState<"login" | "setup">("login");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [setupKey, setSetupKey] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+  const submit = async () => {
+    setError(""); setSaving(true);
+    try {
+      const response = await fetch("/api/clinic/session", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: mode, fullName, email, password, setupKey }) });
+      const data = await response.json();
+      if (!response.ok) throw new Error(data.error ?? "No fue posible acceder.");
+      onAuthenticated(data.user);
+    } catch (exception) { setError(exception instanceof Error ? exception.message : "No fue posible acceder."); }
+    finally { setSaving(false); }
+  };
+  return <main><nav><b><i>+</i>MediCitas</b><button onClick={back}>Ver sitio público</button></nav><section className="clinic patient-portal clinic-access">
+    <small>ACCESO PARA CLÍNICAS</small><h1>{mode === "login" ? "Gestiona tu agenda" : "Crea el acceso inicial"}</h1><p>{mode === "login" ? "Entra con la cuenta autorizada de tu clínica." : "Solo la persona responsable puede activar la cuenta inicial de la clínica."}</p>
+    <div className="settings">
+      {mode === "setup" && <><label>Nombre completo<input value={fullName} onChange={event => setFullName(event.target.value)} placeholder="Persona administradora" /></label><label>Clave de configuración<input type="password" value={setupKey} onChange={event => setSetupKey(event.target.value)} placeholder="Clave entregada por MediCitas" /></label></>}
+      <label>Correo<input type="email" value={email} onChange={event => setEmail(event.target.value)} placeholder="correo@clinica.com" /></label>
+      <label>Contraseña<input type="password" value={password} onChange={event => setPassword(event.target.value)} placeholder="Mínimo 10 caracteres" /></label>
+      {error && <p className="form-error">{error}</p>}
+      <button className="primary" disabled={saving} onClick={submit}>{saving ? "Verificando..." : mode === "login" ? "Entrar a la agenda" : "Activar cuenta de clínica"}</button>
+      <p><small>{mode === "login" ? "¿Es la primera vez?" : "¿Ya tienes una cuenta?"} <button className="text-button" onClick={() => { setMode(mode === "login" ? "setup" : "login"); setError(""); }}>{mode === "login" ? "Crear acceso inicial" : "Iniciar sesión"}</button></small></p>
+    </div>
+  </section></main>;
+}
+
 function Clinic({ back }: { back: () => void }) {
   const [tab,setTab]=useState("Agenda");
+  const [staff,setStaff]=useState<ClinicUser | null>(null);
+  const [checkingAccess,setCheckingAccess]=useState(true);
   const [realAppointments,setRealAppointments]=useState<Array<{id:number;patientName:string;doctorName:string;specialty:string;startsAt:string;status:string}>>([]);
   const loadAppointments=()=>fetch("/api/appointments").then(r=>r.json()).then(data=>setRealAppointments(data.appointments??[])).catch(()=>undefined);
-  useEffect(()=>{loadAppointments()},[]);
+  useEffect(()=>{fetch("/api/clinic/session").then(response=>response.json()).then(data=>{if(data.authenticated)setStaff(data.user);}).finally(()=>setCheckingAccess(false));},[]);
+  useEffect(()=>{if(staff)loadAppointments()},[staff]);
   const updateAppointment=async(id:number,status:"cancelled"|"reschedule_requested")=>{await fetch("/api/appointments",{method:"PATCH",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,status})});loadAppointments()};
   const activeAppointments = realAppointments.filter(item => item.status !== "cancelled");
   const cancelledAppointments = realAppointments.filter(item => item.status === "cancelled");
   const content=tab==="Médicos"?<><h2>Médicos activos</h2><div className="cards">{clinicDoctors.map(d=><article key={d[0]}><em>{d[4]}</em><div><small>{d[1]}</small><h3>{d[0]}</h3><p>{d[2]}<br/><strong>● Activo</strong></p></div><button>Editar</button></article>)}</div></>:tab==="Horarios"?<><h2>Horarios de atención</h2><div className="cards"><article><em>LU</em><div><small>DRA. VALERIA GÓMEZ</small><h3>Lunes a viernes</h3><p>8:00 a.m. a 4:00 p.m. · Citas de 30 minutos</p></div><button>Editar</button></article><article><em>MA</em><div><small>DR. DANIEL PÉREZ</small><h3>Lunes, miércoles y viernes</h3><p>9:00 a.m. a 2:00 p.m. · Citas de 30 minutos</p></div><button>Editar</button></article></div></>:tab==="Configuración"?<><h2>Configuración de clínica</h2><div className="settings"><label>Nombre de la clínica<input value="Clínica Demo" readOnly/></label><label>Teléfono WhatsApp<input value="+507 6000-0000" readOnly/></label><label>Dirección<input value="Dirección de demostración" readOnly/></label><button className="primary">Guardar cambios</button></div></>:null;
+  if (checkingAccess) return <main><nav><b><i>+</i>MediCitas</b><button onClick={back}>Ver sitio público</button></nav><section className="clinic"><p>Comprobando acceso seguro...</p></section></main>;
+  if (!staff) return <ClinicAccess back={back} onAuthenticated={setStaff} />;
   return <main>
-    <nav><b><i>+</i>MediCitas</b><button onClick={back}>Ver sitio público</button></nav>
+    <nav><b><i>+</i>MediCitas</b><div className="nav-actions"><span className="staff-name">{staff.fullName}</span><button onClick={async()=>{await fetch("/api/clinic/session",{method:"DELETE"});setStaff(null);setRealAppointments([])}}>Cerrar sesión</button><button onClick={back}>Ver sitio público</button></div></nav>
     <section className="clinic">
       <small>PANEL DE CLÍNICA · DEMOSTRACIÓN</small>
       <h1>Clínica Demo</h1><p>Resumen de la operación de hoy.</p>

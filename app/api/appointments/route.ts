@@ -1,4 +1,5 @@
-import { eq, sql } from "drizzle-orm";
+import { and, eq, sql } from "drizzle-orm";
+import { getClinicSession } from "../clinic/auth";
 
 function normalizeWhatsApp(value: string) {
   const digits = value.replace(/\D/g, "");
@@ -8,8 +9,10 @@ function normalizeWhatsApp(value: string) {
   return digits;
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
+    const staff = await getClinicSession(request);
+    if (!staff) return Response.json({ error: "Inicia sesión como clínica para ver la agenda." }, { status: 401 });
     const { getDb } = await import("../../../db");
     const { appointments, availability, doctors, patients } = await import("../../../db/schema");
     const db = getDb();
@@ -19,7 +22,8 @@ export async function GET() {
     }).from(appointments)
       .innerJoin(patients, eq(appointments.patientId, patients.id))
       .innerJoin(availability, eq(appointments.availabilityId, availability.id))
-      .innerJoin(doctors, eq(availability.doctorId, doctors.id));
+      .innerJoin(doctors, eq(availability.doctorId, doctors.id))
+      .where(eq(doctors.clinicId, staff.clinicId));
     return Response.json({ appointments: rows });
   } catch (error) {
     const message = error instanceof Error ? error.message : "No fue posible cargar las citas.";
@@ -29,14 +33,21 @@ export async function GET() {
 
 export async function PATCH(request: Request) {
   try {
+    const staff = await getClinicSession(request);
+    if (!staff) return Response.json({ error: "Inicia sesión como clínica para gestionar citas." }, { status: 401 });
     const body = await request.json() as { id?: number; status?: "cancelled" | "reschedule_requested" };
     if (!Number.isInteger(body.id) || !["cancelled", "reschedule_requested"].includes(body.status ?? "")) {
       return Response.json({ error: "Solicitud inválida." }, { status: 400 });
     }
     const { getDb } = await import("../../../db");
-    const { appointments, availability } = await import("../../../db/schema");
+    const { appointments, availability, doctors } = await import("../../../db/schema");
     const db = getDb();
-    const [appointment] = await db.select().from(appointments).where(eq(appointments.id, body.id!)).limit(1);
+    const [appointment] = await db.select({ id: appointments.id, availabilityId: appointments.availabilityId })
+      .from(appointments)
+      .innerJoin(availability, eq(appointments.availabilityId, availability.id))
+      .innerJoin(doctors, eq(availability.doctorId, doctors.id))
+      .where(and(eq(appointments.id, body.id!), eq(doctors.clinicId, staff.clinicId)))
+      .limit(1);
     if (!appointment) return Response.json({ error: "Cita no encontrada." }, { status: 404 });
     await db.update(appointments).set({
       status: body.status!,
