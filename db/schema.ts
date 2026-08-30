@@ -28,7 +28,10 @@ export const availability = sqliteTable("availability", {
   endsAt: text("ends_at").notNull(),
   status: text("status").notNull().default("available"),
   createdAt,
-});
+}, table => [
+  // Evita que una clínica publique dos veces el mismo cupo para un médico.
+  uniqueIndex("availability_doctor_starts_unique").on(table.doctorId, table.startsAt),
+]);
 
 export const patients = sqliteTable("patients", {
   id: integer("id").primaryKey({ autoIncrement: true }),

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX `availability_doctor_starts_unique` ON `availability` (`doctor_id`,`starts_at`);
