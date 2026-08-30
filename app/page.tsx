@@ -32,6 +32,16 @@ function formatAppointmentStatus(status: string) {
   return labels[status] ?? "En gestión";
 }
 
+function formatLongSlot(startsAt: string) {
+  return new Intl.DateTimeFormat("es-PA", {
+    weekday: "long", day: "numeric", month: "long", hour: "numeric", minute: "2-digit",
+  }).format(new Date(startsAt));
+}
+
+function statusClass(status: string) {
+  return `status-${status.replaceAll("_", "-")}`;
+}
+
 function Clinic({ back }: { back: () => void }) {
   const [tab,setTab]=useState("Agenda");
   const [realAppointments,setRealAppointments]=useState<Array<{id:number;patientName:string;doctorName:string;specialty:string;startsAt:string;status:string}>>([]);
@@ -99,9 +109,13 @@ function PatientPortal({ back }: { back: () => void }) {
   };
   const logout = async () => { await fetch("/api/patient/session", { method: "DELETE" }); setFullName(""); setAppointments([]); setWhatsapp(""); setReservationCode(""); };
 
-  return <main><nav><b><i>+</i>MediCitas</b><button onClick={back}>Ver sitio público</button></nav><section className="clinic">
+  const activeAppointments = appointments.filter(appointment => appointment.status !== "cancelled");
+  const pendingAppointments = activeAppointments.filter(appointment => appointment.status === "pending");
+  const nextAppointment = [...activeAppointments].sort((a, b) => a.startsAt.localeCompare(b.startsAt))[0];
+
+  return <main><nav><b><i>+</i>MediCitas</b><button onClick={back}>Ver sitio público</button></nav><section className="clinic patient-portal">
     <small>PANEL DEL PACIENTE</small><h1>{fullName ? `Hola, ${fullName}` : "Consulta tus citas"}</h1><p>{fullName ? "Aquí puedes revisar y gestionar tus reservas." : "Ingresa con el WhatsApp y el código de una de tus reservas."}</p>
-    {loading ? <p>Cargando...</p> : !fullName ? <div className="settings"><label>WhatsApp<input value={whatsapp} onChange={event => setWhatsapp(event.target.value)} placeholder="Ej. 6000-0000" /></label><label>Código de reserva<input value={reservationCode} onChange={event => setReservationCode(event.target.value.toUpperCase())} placeholder="Ej. MC-30D25FF6" /></label>{error && <p className="form-error">{error}</p>}<button className="primary" disabled={saving} onClick={login}>{saving ? "Verificando..." : "Entrar a mis citas"}</button><p><small>Por ahora el código de reserva valida el acceso. Luego llegará un código temporal por WhatsApp.</small></p></div> : <><button onClick={logout}>Cerrar sesión</button><h2>Mis citas</h2>{appointments.length === 0 ? <p>No tienes citas registradas.</p> : appointments.map(appointment => <article key={appointment.id}><em>{new Date(appointment.startsAt).getHours().toString().padStart(2, "0")}</em><div><small>{formatSlot(appointment.startsAt)} · {appointment.reservationCode}</small><h3>{appointment.doctorName}</h3><p>{appointment.specialty}<br/><strong>● {formatAppointmentStatus(appointment.status)}</strong></p></div>{appointment.status !== "cancelled" && <><button onClick={() => updateAppointment(appointment.id, "reschedule_requested")}>Reprogramar</button><button onClick={() => updateAppointment(appointment.id, "cancelled")}>Cancelar</button></>}</article>)}</>}
+    {loading ? <p>Cargando...</p> : !fullName ? <div className="settings"><label>WhatsApp<input value={whatsapp} onChange={event => setWhatsapp(event.target.value)} placeholder="Ej. 6000-0000" /></label><label>Código de reserva<input value={reservationCode} onChange={event => setReservationCode(event.target.value.toUpperCase())} placeholder="Ej. MC-30D25FF6" /></label>{error && <p className="form-error">{error}</p>}<button className="primary" disabled={saving} onClick={login}>{saving ? "Verificando..." : "Entrar a mis citas"}</button><p><small>Por ahora el código de reserva valida el acceso. Luego llegará un código temporal por WhatsApp.</small></p></div> : <><div className="patient-toolbar"><button onClick={logout}>Cerrar sesión</button><span>Tu información está protegida</span></div><div className="patient-summary"><div><b>{nextAppointment ? "1" : "0"}</b><span>Próxima cita</span></div><div><b>{pendingAppointments.length}</b><span>Pendiente{pendingAppointments.length === 1 ? "" : "s"}</span></div><div><b>{appointments.filter(appointment => appointment.status === "cancelled").length}</b><span>Cancelada{appointments.filter(appointment => appointment.status === "cancelled").length === 1 ? "" : "s"}</span></div></div>{nextAppointment && <section className="next-appointment"><small>TU PRÓXIMA CITA</small><h2>{nextAppointment.doctorName}</h2><p>{nextAppointment.specialty} · {formatLongSlot(nextAppointment.startsAt)}</p><span className={`status-pill ${statusClass(nextAppointment.status)}`}>{formatAppointmentStatus(nextAppointment.status)}</span></section>}<h2>Mis citas</h2>{appointments.length === 0 ? <p>No tienes citas registradas.</p> : appointments.map(appointment => <article className={`patient-appointment ${statusClass(appointment.status)}`} key={appointment.id}><em>{new Date(appointment.startsAt).getHours().toString().padStart(2, "0")}</em><div><small>{formatSlot(appointment.startsAt)} · {appointment.reservationCode}</small><h3>{appointment.doctorName}</h3><p>{appointment.specialty}<br/><span className={`status-pill ${statusClass(appointment.status)}`}>{formatAppointmentStatus(appointment.status)}</span></p></div>{appointment.status !== "cancelled" && <div className="patient-actions"><button onClick={() => updateAppointment(appointment.id, "reschedule_requested")}>Reprogramar</button><button className="danger" onClick={() => updateAppointment(appointment.id, "cancelled")}>Cancelar</button></div>}</article>)}<p className="patient-help">¿Necesitas ayuda con una reserva? Comunícate directamente con tu clínica.</p></>}
   </section></main>;
 }
 
