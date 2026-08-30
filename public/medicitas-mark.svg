@@ -1,0 +1,6 @@
+<svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MediCitas">
+  <rect x="7" y="9" width="34" height="32" rx="9" fill="#10294E"/>
+  <path d="M15 6V14M33 6V14" stroke="#10294E" stroke-width="5" stroke-linecap="round"/>
+  <path d="M7 19H41" stroke="#ffffff" stroke-width="3"/>
+  <path d="M24 23V34M18.5 28.5H29.5" stroke="#39B982" stroke-width="5" stroke-linecap="round"/>
+</svg>
