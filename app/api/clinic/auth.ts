@@ -67,7 +67,9 @@ async function derivePassword(password: string, salt: Uint8Array, iterations: nu
 /** Hash PBKDF2 portable para Cloudflare Workers; jamás se almacena una clave en texto. */
 export async function hashPassword(password: string) {
   const salt = crypto.getRandomValues(new Uint8Array(16));
-  const iterations = 210000;
+  // Cloudflare Workers limita PBKDF2 a 100 000 iteraciones.
+  // Usamos el máximo admitido por el runtime para mantener el hash robusto.
+  const iterations = 100000;
   return `pbkdf2$${iterations}$${hex(salt)}$${await derivePassword(password, salt, iterations)}`;
 }
 
