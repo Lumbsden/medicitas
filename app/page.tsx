@@ -22,6 +22,16 @@ function formatSlot(startsAt: string) {
   }).format(new Date(startsAt));
 }
 
+function formatAppointmentStatus(status: string) {
+  const labels: Record<string, string> = {
+    pending: "Pendiente de confirmación",
+    confirmed: "Confirmada",
+    cancelled: "Cancelada",
+    reschedule_requested: "Reprogramación solicitada",
+  };
+  return labels[status] ?? "En gestión";
+}
+
 function Clinic({ back }: { back: () => void }) {
   const [tab,setTab]=useState("Agenda");
   const [realAppointments,setRealAppointments]=useState<Array<{id:number;patientName:string;doctorName:string;specialty:string;startsAt:string;status:string}>>([]);
@@ -43,7 +53,7 @@ function Clinic({ back }: { back: () => void }) {
       </div>
       <h2>Módulos del MVP</h2>
       <div className="modules">{["Agenda","Médicos","Horarios","Configuración"].map(x=><button className={tab===x?"selected":""} onClick={()=>setTab(x)} key={x}>{x}</button>)}</div>
-      {tab==="Agenda"&&<section className="live-agenda"><h2>Agenda real</h2>{activeAppointments.length===0?<p>No hay citas activas por ahora.</p>:activeAppointments.map(item=><article key={item.id}><em>{new Date(item.startsAt).getHours().toString().padStart(2,"0")}</em><div><small>{new Date(item.startsAt).toLocaleString("es-PA")}</small><h3>{item.patientName}</h3><p>{item.doctorName} · {item.specialty}<br/><strong>● {item.status}</strong></p></div><button onClick={()=>updateAppointment(item.id,"reschedule_requested")}>Reprogramar</button><button onClick={()=>updateAppointment(item.id,"cancelled")}>Cancelar</button></article>)}{cancelledAppointments.length>0&&<><h2>Historial de cancelaciones</h2>{cancelledAppointments.map(item=><article key={item.id}><em>{new Date(item.startsAt).getHours().toString().padStart(2,"0")}</em><div><small>{new Date(item.startsAt).toLocaleString("es-PA")}</small><h3>{item.patientName}</h3><p>{item.doctorName} · {item.specialty}<br/><strong>● Cancelada</strong></p></div></article>)}</>}</section>}
+      {tab==="Agenda"&&<section className="live-agenda"><h2>Agenda real</h2>{activeAppointments.length===0?<p>No hay citas activas por ahora.</p>:activeAppointments.map(item=><article key={item.id}><em>{new Date(item.startsAt).getHours().toString().padStart(2,"0")}</em><div><small>{new Date(item.startsAt).toLocaleString("es-PA")}</small><h3>{item.patientName}</h3><p>{item.doctorName} · {item.specialty}<br/><strong>● {formatAppointmentStatus(item.status)}</strong></p></div><button onClick={()=>updateAppointment(item.id,"reschedule_requested")}>Reprogramar</button><button onClick={()=>updateAppointment(item.id,"cancelled")}>Cancelar</button></article>)}{cancelledAppointments.length>0&&<><h2>Historial de cancelaciones</h2>{cancelledAppointments.map(item=><article key={item.id}><em>{new Date(item.startsAt).getHours().toString().padStart(2,"0")}</em><div><small>{new Date(item.startsAt).toLocaleString("es-PA")}</small><h3>{item.patientName}</h3><p>{item.doctorName} · {item.specialty}<br/><strong>● Cancelada</strong></p></div></article>)}</>}</section>}
       {content}
     </section>
   </main>;
@@ -91,7 +101,7 @@ function PatientPortal({ back }: { back: () => void }) {
 
   return <main><nav><b><i>+</i>MediCitas</b><button onClick={back}>Ver sitio público</button></nav><section className="clinic">
     <small>PANEL DEL PACIENTE</small><h1>{fullName ? `Hola, ${fullName}` : "Consulta tus citas"}</h1><p>{fullName ? "Aquí puedes revisar y gestionar tus reservas." : "Ingresa con el WhatsApp y el código de una de tus reservas."}</p>
-    {loading ? <p>Cargando...</p> : !fullName ? <div className="settings"><label>WhatsApp<input value={whatsapp} onChange={event => setWhatsapp(event.target.value)} placeholder="Ej. 6000-0000" /></label><label>Código de reserva<input value={reservationCode} onChange={event => setReservationCode(event.target.value.toUpperCase())} placeholder="Ej. MC-30D25FF6" /></label>{error && <p className="form-error">{error}</p>}<button className="primary" disabled={saving} onClick={login}>{saving ? "Verificando..." : "Entrar a mis citas"}</button><p><small>Por ahora el código de reserva valida el acceso. Luego llegará un código temporal por WhatsApp.</small></p></div> : <><button onClick={logout}>Cerrar sesión</button><h2>Mis citas</h2>{appointments.length === 0 ? <p>No tienes citas registradas.</p> : appointments.map(appointment => <article key={appointment.id}><em>{new Date(appointment.startsAt).getHours().toString().padStart(2, "0")}</em><div><small>{formatSlot(appointment.startsAt)} · {appointment.reservationCode}</small><h3>{appointment.doctorName}</h3><p>{appointment.specialty}<br/><strong>● {appointment.status}</strong></p></div>{appointment.status !== "cancelled" && <><button onClick={() => updateAppointment(appointment.id, "reschedule_requested")}>Reprogramar</button><button onClick={() => updateAppointment(appointment.id, "cancelled")}>Cancelar</button></>}</article>)}</>}
+    {loading ? <p>Cargando...</p> : !fullName ? <div className="settings"><label>WhatsApp<input value={whatsapp} onChange={event => setWhatsapp(event.target.value)} placeholder="Ej. 6000-0000" /></label><label>Código de reserva<input value={reservationCode} onChange={event => setReservationCode(event.target.value.toUpperCase())} placeholder="Ej. MC-30D25FF6" /></label>{error && <p className="form-error">{error}</p>}<button className="primary" disabled={saving} onClick={login}>{saving ? "Verificando..." : "Entrar a mis citas"}</button><p><small>Por ahora el código de reserva valida el acceso. Luego llegará un código temporal por WhatsApp.</small></p></div> : <><button onClick={logout}>Cerrar sesión</button><h2>Mis citas</h2>{appointments.length === 0 ? <p>No tienes citas registradas.</p> : appointments.map(appointment => <article key={appointment.id}><em>{new Date(appointment.startsAt).getHours().toString().padStart(2, "0")}</em><div><small>{formatSlot(appointment.startsAt)} · {appointment.reservationCode}</small><h3>{appointment.doctorName}</h3><p>{appointment.specialty}<br/><strong>● {formatAppointmentStatus(appointment.status)}</strong></p></div>{appointment.status !== "cancelled" && <><button onClick={() => updateAppointment(appointment.id, "reschedule_requested")}>Reprogramar</button><button onClick={() => updateAppointment(appointment.id, "cancelled")}>Cancelar</button></>}</article>)}</>}
   </section></main>;
 }
 
