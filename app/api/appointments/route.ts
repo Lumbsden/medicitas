@@ -35,13 +35,33 @@ export async function PATCH(request: Request) {
   try {
     const staff = await getClinicSession(request);
     if (!staff) return Response.json({ error: "Inicia sesión como clínica para gestionar citas." }, { status: 401 });
-    const body = await request.json() as { id?: number; status?: "confirmed" | "cancelled" | "reschedule_requested" };
-    if (!Number.isInteger(body.id) || !["confirmed", "cancelled", "reschedule_requested"].includes(body.status ?? "")) {
-      return Response.json({ error: "Solicitud inválida." }, { status: 400 });
-    }
+    const body = await request.json() as { id?: number; availabilityId?: number; action?: "reassign"; status?: "confirmed" | "cancelled" | "reschedule_requested" };
     const { getDb } = await import("../../../db");
     const { appointments, availability, doctors } = await import("../../../db/schema");
     const db = getDb();
+
+    if (body.action === "reassign") {
+      if (!Number.isInteger(body.id) || !Number.isInteger(body.availabilityId)) return Response.json({ error: "Selecciona la cita y el nuevo horario." }, { status: 400 });
+      const [appointment] = await db.select({ id: appointments.id, availabilityId: appointments.availabilityId })
+        .from(appointments).innerJoin(availability, eq(appointments.availabilityId, availability.id)).innerJoin(doctors, eq(availability.doctorId, doctors.id))
+        .where(and(eq(appointments.id, body.id), eq(doctors.clinicId, staff.clinicId))).limit(1);
+      const [target] = await db.select({ id: availability.id, status: availability.status })
+        .from(availability).innerJoin(doctors, eq(availability.doctorId, doctors.id))
+        .where(and(eq(availability.id, body.availabilityId), eq(doctors.clinicId, staff.clinicId))).limit(1);
+      if (!appointment || !target) return Response.json({ error: "No encontramos la cita o el horario en esta clínica." }, { status: 404 });
+      if (target.status !== "available") return Response.json({ error: "Ese horario ya no está disponible." }, { status: 409 });
+      await db.update(availability).set({ status: "reserved" }).where(eq(availability.id, target.id));
+      try {
+        await db.update(appointments).set({ availabilityId: target.id, status: "pending", cancelledAt: null, rescheduleRequestedAt: null, updatedAt: sql`CURRENT_TIMESTAMP` }).where(eq(appointments.id, appointment.id));
+        await db.update(availability).set({ status: "available" }).where(eq(availability.id, appointment.availabilityId));
+        return Response.json({ success: true });
+      } catch {
+        await db.update(availability).set({ status: "available" }).where(eq(availability.id, target.id));
+        return Response.json({ error: "No fue posible reprogramar la cita. Intenta de nuevo." }, { status: 409 });
+      }
+    }
+
+    if (!Number.isInteger(body.id) || !["confirmed", "cancelled", "reschedule_requested"].includes(body.status ?? "")) return Response.json({ error: "Solicitud inválida." }, { status: 400 });
     const [appointment] = await db.select({ id: appointments.id, availabilityId: appointments.availabilityId })
       .from(appointments)
       .innerJoin(availability, eq(appointments.availabilityId, availability.id))
