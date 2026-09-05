@@ -2,7 +2,7 @@ import { and, asc, eq, gt } from "drizzle-orm";
 import { getClinicSession } from "../auth";
 
 type ManagementBody = {
-  action?: "doctor" | "update_doctor" | "availability" | "update_availability" | "clinic";
+  action?: "doctor" | "update_doctor" | "availability" | "update_availability" | "recurring_availability" | "clinic";
   id?: number;
   fullName?: string;
   specialty?: string;
@@ -12,6 +12,7 @@ type ManagementBody = {
   clinicName?: string;
   address?: string;
   whatsapp?: string;
+  weeks?: number;
 };
 
 export async function GET(request: Request) {
@@ -19,7 +20,7 @@ export async function GET(request: Request) {
     const staff = await getClinicSession(request);
     if (!staff) return Response.json({ error: "Inicia sesión como clínica para gestionar la agenda." }, { status: 401 });
     const { getDb } = await import("../../../../db");
-    const { availability, clinics, doctors } = await import("../../../../db/schema");
+    const { availability, availabilitySeries, clinics, doctors } = await import("../../../../db/schema");
     const db = getDb();
     const [clinic] = await db.select().from(clinics).where(eq(clinics.id, staff.clinicId)).limit(1);
     const doctorRows = await db.select().from(doctors).where(eq(doctors.clinicId, staff.clinicId)).orderBy(asc(doctors.fullName));
@@ -107,6 +108,28 @@ export async function POST(request: Request) {
       } catch {
         return Response.json({ error: "Ese médico ya tiene un cupo en ese horario." }, { status: 409 });
       }
+    }
+
+    if (body.action === "recurring_availability") {
+      if (!Number.isInteger(body.doctorId) || !body.startsAt) return Response.json({ error: "Selecciona un médico y la primera fecha con hora." }, { status: 400 });
+      const weeks = Number(body.weeks);
+      if (!Number.isInteger(weeks) || weeks < 2 || weeks > 12) return Response.json({ error: "Puedes crear entre 2 y 12 semanas de horarios." }, { status: 400 });
+      const firstStartsAt = new Date(body.startsAt);
+      if (Number.isNaN(firstStartsAt.getTime()) || firstStartsAt.getTime() <= Date.now()) return Response.json({ error: "La primera fecha debe ser futura." }, { status: 400 });
+      const [doctor] = await db.select({ id: doctors.id }).from(doctors).where(and(eq(doctors.id, body.doctorId), eq(doctors.clinicId, staff.clinicId), eq(doctors.status, "active"))).limit(1);
+      if (!doctor) return Response.json({ error: "El médico no pertenece a esta clínica o no está activo." }, { status: 404 });
+      await db.insert(availabilitySeries).values({ clinicId: staff.clinicId, doctorId: doctor.id, firstStartsAt: firstStartsAt.toISOString(), weeks, status: "active" });
+      let created = 0;
+      for (let week = 0; week < weeks; week += 1) {
+        const startsAt = new Date(firstStartsAt.getTime() + week * 7 * 24 * 60 * 60 * 1000);
+        try {
+          await db.insert(availability).values({ doctorId: doctor.id, startsAt: startsAt.toISOString(), endsAt: new Date(startsAt.getTime() + 30 * 60 * 1000).toISOString(), status: "available" });
+          created += 1;
+        } catch {
+          // Si ya existía ese cupo, se conserva y se crea el resto de la serie.
+        }
+      }
+      return Response.json({ created, message: created ? `Se abrieron ${created} cupos semanales.` : "Todos esos cupos ya existían." }, { status: 201 });
     }
 
     return Response.json({ error: "Acción no reconocida." }, { status: 400 });

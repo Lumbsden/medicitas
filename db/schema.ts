@@ -33,6 +33,17 @@ export const availability = sqliteTable("availability", {
   uniqueIndex("availability_doctor_starts_unique").on(table.doctorId, table.startsAt),
 ]);
 
+/** Registra una apertura masiva de cupos para poder auditar la agenda. */
+export const availabilitySeries = sqliteTable("availability_series", {
+  id: integer("id").primaryKey({ autoIncrement: true }),
+  clinicId: integer("clinic_id").notNull().references(() => clinics.id),
+  doctorId: integer("doctor_id").notNull().references(() => doctors.id),
+  firstStartsAt: text("first_starts_at").notNull(),
+  weeks: integer("weeks").notNull(),
+  status: text("status").notNull().default("active"),
+  createdAt,
+});
+
 export const patients = sqliteTable("patients", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   fullName: text("full_name").notNull(),
