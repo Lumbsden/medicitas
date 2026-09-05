@@ -1,8 +1,8 @@
 import { and, asc, eq, gt } from "drizzle-orm";
-import { getClinicSession } from "../auth";
+import { getClinicSession, hashPassword, normalizeEmail } from "../auth";
 
 type ManagementBody = {
-  action?: "doctor" | "update_doctor" | "availability" | "update_availability" | "recurring_availability" | "clinic";
+  action?: "doctor" | "update_doctor" | "availability" | "update_availability" | "recurring_availability" | "clinic" | "staff";
   id?: number;
   fullName?: string;
   specialty?: string;
@@ -13,6 +13,9 @@ type ManagementBody = {
   address?: string;
   whatsapp?: string;
   weeks?: number;
+  email?: string;
+  password?: string;
+  role?: "receptionist";
 };
 
 export async function GET(request: Request) {
@@ -20,10 +23,11 @@ export async function GET(request: Request) {
     const staff = await getClinicSession(request);
     if (!staff) return Response.json({ error: "Inicia sesión como clínica para gestionar la agenda." }, { status: 401 });
     const { getDb } = await import("../../../../db");
-    const { availability, availabilitySeries, clinics, doctors } = await import("../../../../db/schema");
+    const { availability, clinics, clinicUsers, doctors } = await import("../../../../db/schema");
     const db = getDb();
     const [clinic] = await db.select().from(clinics).where(eq(clinics.id, staff.clinicId)).limit(1);
     const doctorRows = await db.select().from(doctors).where(eq(doctors.clinicId, staff.clinicId)).orderBy(asc(doctors.fullName));
+    const staffRows = await db.select({ id: clinicUsers.id, fullName: clinicUsers.fullName, email: clinicUsers.email, role: clinicUsers.role, status: clinicUsers.status }).from(clinicUsers).where(eq(clinicUsers.clinicId, staff.clinicId)).orderBy(asc(clinicUsers.fullName));
     const slotRows = await db.select({
       id: availability.id, doctorId: availability.doctorId, startsAt: availability.startsAt,
       endsAt: availability.endsAt, status: availability.status, doctorName: doctors.fullName,
@@ -31,7 +35,7 @@ export async function GET(request: Request) {
       .innerJoin(doctors, eq(availability.doctorId, doctors.id))
       .where(and(eq(doctors.clinicId, staff.clinicId), gt(availability.startsAt, new Date(Date.now() - 60 * 60 * 1000).toISOString())))
       .orderBy(asc(availability.startsAt));
-    return Response.json({ clinic, doctors: doctorRows, availability: slotRows });
+    return Response.json({ clinic, doctors: doctorRows, availability: slotRows, staff: staffRows });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : "No fue posible cargar la configuración." }, { status: 500 });
   }
@@ -43,7 +47,7 @@ export async function POST(request: Request) {
     if (!staff) return Response.json({ error: "Inicia sesión como clínica para realizar cambios." }, { status: 401 });
     const body = await request.json() as ManagementBody;
     const { getDb } = await import("../../../../db");
-    const { availability, clinics, doctors } = await import("../../../../db/schema");
+    const { availability, availabilitySeries, clinics, clinicUsers, doctors } = await import("../../../../db/schema");
     const db = getDb();
 
     if (body.action === "clinic") {
@@ -56,6 +60,18 @@ export async function POST(request: Request) {
       }
       await db.update(clinics).set({ name, address, whatsapp }).where(eq(clinics.id, staff.clinicId));
       return Response.json({ success: true });
+    }
+
+    if (body.action === "staff") {
+      if (staff.role !== "admin") return Response.json({ error: "Solo la persona administradora puede crear accesos para el equipo." }, { status: 403 });
+      const fullName = body.fullName?.trim() ?? "";
+      const email = normalizeEmail(body.email ?? "");
+      const password = body.password ?? "";
+      if (fullName.length < 3 || !/^\S+@\S+\.\S+$/.test(email) || password.length < 10) return Response.json({ error: "Indica nombre, correo válido y una contraseña de al menos 10 caracteres." }, { status: 400 });
+      const existing = await db.select({ id: clinicUsers.id }).from(clinicUsers).where(eq(clinicUsers.email, email)).limit(1);
+      if (existing.length) return Response.json({ error: "Ese correo ya tiene un acceso en MediCitas." }, { status: 409 });
+      const [user] = await db.insert(clinicUsers).values({ clinicId: staff.clinicId, fullName, email, passwordHash: await hashPassword(password), role: "receptionist", status: "active" }).returning();
+      return Response.json({ user: { id: user.id, fullName: user.fullName, email: user.email, role: user.role } }, { status: 201 });
     }
 
     if (body.action === "doctor") {
