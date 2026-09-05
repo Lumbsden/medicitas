@@ -2,9 +2,11 @@ import { and, asc, eq, gt } from "drizzle-orm";
 import { getClinicSession } from "../auth";
 
 type ManagementBody = {
-  action?: "doctor" | "availability";
+  action?: "doctor" | "update_doctor" | "availability" | "update_availability";
+  id?: number;
   fullName?: string;
   specialty?: string;
+  status?: "active" | "inactive" | "available" | "blocked";
   doctorId?: number;
   startsAt?: string;
 };
@@ -47,6 +49,30 @@ export async function POST(request: Request) {
       if (fullName.length < 3 || specialty.length < 3) return Response.json({ error: "Indica el nombre y la especialidad del médico." }, { status: 400 });
       const [doctor] = await db.insert(doctors).values({ clinicId: staff.clinicId, fullName, specialty, status: "active" }).returning();
       return Response.json({ doctor }, { status: 201 });
+    }
+
+    if (body.action === "update_doctor") {
+      if (staff.role !== "admin") return Response.json({ error: "Solo la persona administradora puede modificar médicos." }, { status: 403 });
+      if (!Number.isInteger(body.id)) return Response.json({ error: "Médico no válido." }, { status: 400 });
+      const fullName = body.fullName?.trim() ?? "";
+      const specialty = body.specialty?.trim() ?? "";
+      const status = body.status === "inactive" ? "inactive" : "active";
+      if (fullName.length < 3 || specialty.length < 3) return Response.json({ error: "Indica el nombre y la especialidad del médico." }, { status: 400 });
+      const [doctor] = await db.select({ id: doctors.id }).from(doctors).where(and(eq(doctors.id, body.id), eq(doctors.clinicId, staff.clinicId))).limit(1);
+      if (!doctor) return Response.json({ error: "No encontramos ese médico en tu clínica." }, { status: 404 });
+      await db.update(doctors).set({ fullName, specialty, status }).where(eq(doctors.id, doctor.id));
+      return Response.json({ success: true });
+    }
+
+    if (body.action === "update_availability") {
+      if (!Number.isInteger(body.id) || !["available", "blocked"].includes(body.status ?? "")) return Response.json({ error: "Horario no válido." }, { status: 400 });
+      const [slot] = await db.select({ id: availability.id, status: availability.status })
+        .from(availability).innerJoin(doctors, eq(availability.doctorId, doctors.id))
+        .where(and(eq(availability.id, body.id), eq(doctors.clinicId, staff.clinicId))).limit(1);
+      if (!slot) return Response.json({ error: "No encontramos ese horario." }, { status: 404 });
+      if (slot.status === "reserved") return Response.json({ error: "No puedes bloquear un horario que ya tiene una cita." }, { status: 409 });
+      await db.update(availability).set({ status: body.status! }).where(eq(availability.id, slot.id));
+      return Response.json({ success: true });
     }
 
     if (body.action === "availability") {

@@ -35,8 +35,8 @@ export async function PATCH(request: Request) {
   try {
     const staff = await getClinicSession(request);
     if (!staff) return Response.json({ error: "Inicia sesión como clínica para gestionar citas." }, { status: 401 });
-    const body = await request.json() as { id?: number; status?: "cancelled" | "reschedule_requested" };
-    if (!Number.isInteger(body.id) || !["cancelled", "reschedule_requested"].includes(body.status ?? "")) {
+    const body = await request.json() as { id?: number; status?: "confirmed" | "cancelled" | "reschedule_requested" };
+    if (!Number.isInteger(body.id) || !["confirmed", "cancelled", "reschedule_requested"].includes(body.status ?? "")) {
       return Response.json({ error: "Solicitud inválida." }, { status: 400 });
     }
     const { getDb } = await import("../../../db");
