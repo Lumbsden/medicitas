@@ -2,13 +2,16 @@ import { and, asc, eq, gt } from "drizzle-orm";
 import { getClinicSession } from "../auth";
 
 type ManagementBody = {
-  action?: "doctor" | "update_doctor" | "availability" | "update_availability";
+  action?: "doctor" | "update_doctor" | "availability" | "update_availability" | "clinic";
   id?: number;
   fullName?: string;
   specialty?: string;
   status?: "active" | "inactive" | "available" | "blocked";
   doctorId?: number;
   startsAt?: string;
+  clinicName?: string;
+  address?: string;
+  whatsapp?: string;
 };
 
 export async function GET(request: Request) {
@@ -39,8 +42,20 @@ export async function POST(request: Request) {
     if (!staff) return Response.json({ error: "Inicia sesión como clínica para realizar cambios." }, { status: 401 });
     const body = await request.json() as ManagementBody;
     const { getDb } = await import("../../../../db");
-    const { availability, doctors } = await import("../../../../db/schema");
+    const { availability, clinics, doctors } = await import("../../../../db/schema");
     const db = getDb();
+
+    if (body.action === "clinic") {
+      if (staff.role !== "admin") return Response.json({ error: "Solo la persona administradora puede modificar los datos de la clínica." }, { status: 403 });
+      const name = body.clinicName?.trim() ?? "";
+      const address = body.address?.trim() ?? "";
+      const whatsapp = body.whatsapp?.trim() ?? "";
+      if (name.length < 3 || address.length < 5 || whatsapp.length < 7) {
+        return Response.json({ error: "Completa el nombre, la dirección y el WhatsApp de la clínica." }, { status: 400 });
+      }
+      await db.update(clinics).set({ name, address, whatsapp }).where(eq(clinics.id, staff.clinicId));
+      return Response.json({ success: true });
+    }
 
     if (body.action === "doctor") {
       if (staff.role !== "admin") return Response.json({ error: "Solo la persona administradora puede agregar médicos." }, { status: 403 });
